@@ -475,9 +475,13 @@
 
   <div class="settings-row">
     <label>🔑 Claude API Key</label>
-    <input type="password" id="claude-key" placeholder="sk-ant-..."
-      style="background:var(--surface2);color:var(--text);border:1px solid var(--border);
-             border-radius:8px;padding:6px 10px;font-size:13px;width:220px;outline:none" />
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="password" id="claude-key" placeholder="sk-ant-..."
+        style="background:var(--surface2);color:var(--text);border:1px solid var(--border);
+               border-radius:8px;padding:6px 10px;font-size:13px;width:200px;outline:none" />
+      <button class="btn-sm" id="btn-save-key" style="flex-shrink:0">💾 Lưu</button>
+      <span id="key-status" style="font-size:12px;color:var(--text3)"></span>
+    </div>
   </div>
 
   <div class="settings-row" id="whisper-row">
@@ -545,6 +549,8 @@
   const whisperUrlInput = document.getElementById('whisper-url');
   const serverStatus = document.getElementById('server-status');
   const claudeKeyInput = document.getElementById('claude-key');
+  const btnSaveKey = document.getElementById('btn-save-key');
+  const keyStatus = document.getElementById('key-status');
   const statusText = document.getElementById('status-text');
   const timerEl = document.getElementById('timer');
   const dot = document.getElementById('dot');
@@ -1159,9 +1165,54 @@
   btnSummarize.addEventListener('click', summarize);
   btnCheckServer.addEventListener('click', checkServer);
 
-  // Lưu API key vào localStorage
-  claudeKeyInput.value = localStorage.getItem('claude-key') || '';
-  claudeKeyInput.addEventListener('input', () => localStorage.setItem('claude-key', claudeKeyInput.value));
+  // ===== API KEY =====
+  async function saveApiKey() {
+    const key = claudeKeyInput.value.trim();
+    if (!key) { keyStatus.textContent = '⚠️ Nhập key trước'; keyStatus.style.color = '#fbbf24'; return; }
+    const url = whisperUrlInput.value.trim();
+    try {
+      const res = await fetch(url + '/save-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) throw new Error();
+      localStorage.setItem('claude-key', key);
+      keyStatus.textContent = '✅ Đã lưu & mã hóa';
+      keyStatus.style.color = 'var(--success)';
+    } catch {
+      // Fallback: lưu vào localStorage nếu server chưa chạy
+      localStorage.setItem('claude-key', key);
+      keyStatus.textContent = '💾 Lưu vào browser (server chưa chạy)';
+      keyStatus.style.color = '#fbbf24';
+    }
+  }
+
+  async function loadApiKey() {
+    const url = whisperUrlInput.value.trim();
+    try {
+      const res = await fetch(url + '/get-key', { signal: AbortSignal.timeout(3000) });
+      const data = await res.json();
+      if (data.key) {
+        claudeKeyInput.value = data.key;
+        localStorage.setItem('claude-key', data.key);
+        keyStatus.textContent = '✅ Key đã tải từ máy';
+        keyStatus.style.color = 'var(--success)';
+        return;
+      }
+    } catch {}
+    // Fallback localStorage
+    claudeKeyInput.value = localStorage.getItem('claude-key') || '';
+    if (claudeKeyInput.value) {
+      keyStatus.textContent = '💾 Key từ browser';
+      keyStatus.style.color = 'var(--text3)';
+    }
+  }
+
+  btnSaveKey.addEventListener('click', saveApiKey);
+  // Tự load key khi trang mở
+  loadApiKey();
 
   // ===== INIT =====
   resizeCanvas();
