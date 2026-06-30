@@ -443,6 +443,7 @@
   </div>
 
   <div class="actions">
+    <button class="btn-sm" id="btn-live-whisper" disabled style="background:var(--surface2);color:var(--text);border-color:var(--border)">⚡ Live Whisper</button>
     <button class="btn-sm" id="btn-whisper" disabled style="background:var(--accent);color:#fff;border-color:var(--accent)">🤖 Whisper AI</button>
     <button class="btn-sm" id="btn-summarize" disabled style="background:#7c3aed;color:#fff;border-color:#7c3aed">✨ Tóm tắt</button>
     <button class="btn-sm" id="btn-copy" disabled>📋 Copy</button>
@@ -521,6 +522,12 @@
   let animFrame = null;
   let recognitionActive = false;
   let restartTimeout = null;
+  let headerChunk = null;
+  let liveChunks = [];
+  let liveInterval = null;
+  let isLiveWhisper = false;
+  let isProcessingChunk = false;
+  const LIVE_INTERVAL_MS = 30000; // gửi mỗi 30 giây
 
   // ===== ELEMENTS =====
   const btnRecord = document.getElementById('btn-record');
@@ -531,6 +538,7 @@
   const btnDocx = document.getElementById('btn-export-docx');
   const btnWav = document.getElementById('btn-export-wav');
   const btnClear = document.getElementById('btn-clear');
+  const btnLiveWhisper = document.getElementById('btn-live-whisper');
   const btnWhisper = document.getElementById('btn-whisper');
   const btnSummarize = document.getElementById('btn-summarize');
   const btnCheckServer = document.getElementById('btn-check-server');
@@ -743,7 +751,11 @@
     audioChunks = [];
 
     mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) audioChunks.push(e.data);
+      if (e.data.size === 0) return;
+      // Chunk đầu tiên là header (codec info) — phải kèm theo mọi blob gửi Whisper
+      if (audioChunks.length === 0) headerChunk = e.data;
+      audioChunks.push(e.data);
+      if (isLiveWhisper) liveChunks.push(e.data);
     };
 
     mediaRecorder.onstop = () => {
@@ -770,6 +782,7 @@
     btnRecord.disabled = true;
     btnPause.disabled = false;
     btnStop.disabled = false;
+    btnLiveWhisper.disabled = false;
     langSelect.disabled = true;
   }
 
@@ -810,11 +823,13 @@
     stopTimer();
     liveBadge.classList.remove('visible');
 
+    stopLiveWhisper();
     drawIdle();
     setStatus('done', `Hoàn thành — ${formatTime(seconds)}`);
     btnRecord.disabled = false;
     btnPause.disabled = true;
     btnStop.disabled = true;
+    btnLiveWhisper.disabled = true;
     btnPause.innerHTML = '<span class="btn-icon">⏸</span> Tạm dừng';
     langSelect.disabled = false;
     updateExportButtons();
@@ -937,6 +952,73 @@
     const toggle = document.getElementById('history-toggle');
     const open = list.classList.toggle('open');
     toggle.textContent = open ? '▲ Đóng' : '▼ Mở';
+  }
+
+  // ===== LIVE WHISPER =====
+  function toggleLiveWhisper() {
+    if (!isRecording) return;
+    isLiveWhisper = !isLiveWhisper;
+    if (isLiveWhisper) {
+      liveChunks = [];
+      btnLiveWhisper.textContent = '🔴 Live: BẬT';
+      btnLiveWhisper.style.background = 'var(--danger)';
+      btnLiveWhisper.style.color = '#fff';
+      btnLiveWhisper.style.borderColor = 'var(--danger)';
+      setSpeechStatus('⚡ Live Whisper đang chạy...', 'var(--danger)');
+      liveInterval = setInterval(sendLiveChunk, LIVE_INTERVAL_MS);
+    } else {
+      stopLiveWhisper();
+    }
+  }
+
+  function stopLiveWhisper() {
+    isLiveWhisper = false;
+    clearInterval(liveInterval);
+    liveInterval = null;
+    liveChunks = [];
+    btnLiveWhisper.textContent = '⚡ Live Whisper';
+    btnLiveWhisper.style.background = 'var(--surface2)';
+    btnLiveWhisper.style.color = 'var(--text)';
+    btnLiveWhisper.style.borderColor = 'var(--border)';
+    clearSpeechStatus();
+  }
+
+  async function sendLiveChunk() {
+    if (!isLiveWhisper || liveChunks.length === 0 || isProcessingChunk) return;
+    isProcessingChunk = true;
+
+    // Lấy các chunk hiện tại, reset buffer
+    const chunks = liveChunks.splice(0);
+    // Ghép header + chunks thành blob hoàn chỉnh Whisper có thể đọc
+    const blobParts = headerChunk ? [headerChunk, ...chunks] : chunks;
+    const blob = new Blob(blobParts, { type: getSupportedMimeType() || 'audio/webm' });
+
+    setSpeechStatus('⏳ Đang xử lý...', '#fbbf24');
+
+    try {
+      const url = whisperUrlInput.value.trim();
+      const rawLang = langSelect.value;
+      const lang = rawLang === 'auto' ? 'auto' : rawLang.split('-')[0];
+      const form = new FormData();
+      form.append('audio', blob, 'chunk.webm');
+      form.append('language', lang);
+
+      const res = await fetch(url + '/transcribe', {
+        method: 'POST', body: form,
+        signal: AbortSignal.timeout(60000),
+      });
+      if (!res.ok) throw new Error('Server lỗi ' + res.status);
+      const data = await res.json();
+      if (data.text && data.text.trim()) {
+        finalTranscript += data.text.trim() + ' ';
+        renderTranscript();
+      }
+      setSpeechStatus('⚡ Live Whisper đang chạy...', 'var(--danger)');
+    } catch (err) {
+      setSpeechStatus('⚠️ Lỗi chunk: ' + err.message, '#fbbf24');
+    } finally {
+      isProcessingChunk = false;
+    }
   }
 
   // ===== WHISPER =====
@@ -1072,6 +1154,7 @@
   btnDocx.addEventListener('click', exportDocx);
   btnWav.addEventListener('click', exportWav);
   btnClear.addEventListener('click', () => { if (confirm('Xóa toàn bộ transcript?')) clearTranscript(); });
+  btnLiveWhisper.addEventListener('click', toggleLiveWhisper);
   btnWhisper.addEventListener('click', transcribeWithWhisper);
   btnSummarize.addEventListener('click', summarize);
   btnCheckServer.addEventListener('click', checkServer);
