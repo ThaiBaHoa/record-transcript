@@ -357,6 +357,7 @@
   <div class="warning" id="speech-warning">
     ⚠️ Trình duyệt này không hỗ trợ Web Speech API. Transcript sẽ không hoạt động. Dùng Chrome hoặc Safari để có đầy đủ tính năng.
   </div>
+  <div class="warning" id="speech-error" style="display:none"></div>
 
   <div id="transcript-box">
     <span class="placeholder" id="placeholder">Transcript sẽ hiển thị ở đây khi bạn bắt đầu ghi âm...</span>
@@ -520,8 +521,14 @@
     };
 
     recognition.onerror = (e) => {
-      if (e.error !== 'no-speech' && e.error !== 'aborted') {
-        console.warn('Speech error:', e.error);
+      if (e.error === 'not-allowed') {
+        showSpeechError('Microphone bị chặn cho Speech Recognition. Vào Settings → Privacy → Microphone và cho phép trang này.');
+      } else if (e.error === 'network') {
+        showSpeechError('Lỗi mạng: Speech Recognition cần kết nối internet.');
+      } else if (e.error === 'service-not-allowed') {
+        showSpeechError('Trình duyệt không cho phép Speech Recognition trên trang này.');
+      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+        showSpeechError('Lỗi nhận dạng giọng nói: ' + e.error);
       }
     };
 
@@ -537,6 +544,12 @@
         }, 300);
       }
     };
+  }
+
+  function showSpeechError(msg) {
+    const el = document.getElementById('speech-error');
+    el.textContent = '⚠️ ' + msg;
+    el.style.display = 'block';
   }
 
   function renderTranscript(interim = '') {
