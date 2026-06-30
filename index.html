@@ -351,6 +351,7 @@
 
   <div class="transcript-header">
     <h2>Transcript</h2>
+    <span class="badge" id="speech-status" style="background:var(--text3);opacity:1;display:none"></span>
     <span class="badge" id="live-badge">● LIVE</span>
   </div>
 
@@ -507,7 +508,12 @@
     recognition.interimResults = true;
     recognition.lang = langSelect.value;
 
+    recognition.onstart = () => {
+      setSpeechStatus('🎤 Đang nghe...', '#00d68f');
+    };
+
     recognition.onresult = (e) => {
+      setSpeechStatus('✅ Nhận dạng...', '#6c63ff');
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
@@ -527,7 +533,9 @@
         showSpeechError('Lỗi mạng: Speech Recognition cần kết nối internet.');
       } else if (e.error === 'service-not-allowed') {
         showSpeechError('Trình duyệt không cho phép Speech Recognition trên trang này.');
-      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+      } else if (e.error === 'no-speech') {
+        setSpeechStatus('🔇 Không nghe thấy giọng nói', '#fbbf24');
+      } else if (e.error !== 'aborted') {
         showSpeechError('Lỗi nhận dạng giọng nói: ' + e.error);
       }
     };
@@ -544,6 +552,17 @@
         }, 300);
       }
     };
+  }
+
+  function setSpeechStatus(msg, color) {
+    const el = document.getElementById('speech-status');
+    el.textContent = msg;
+    el.style.background = color;
+    el.style.display = 'inline-block';
+  }
+
+  function clearSpeechStatus() {
+    document.getElementById('speech-status').style.display = 'none';
   }
 
   function showSpeechError(msg) {
@@ -656,6 +675,7 @@
 
     if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
     clearTimeout(restartTimeout);
+    clearSpeechStatus();
     if (recognition) { recognition.stop(); recognitionActive = false; }
     if (stream) stream.getTracks().forEach(t => t.stop());
     if (audioContext) audioContext.close();
