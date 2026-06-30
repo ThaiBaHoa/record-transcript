@@ -290,6 +290,84 @@
       outline: none;
     }
 
+    /* === SUMMARY === */
+    .summary-box {
+      background: var(--surface2);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      margin: 0 24px 20px;
+      font-size: 15px;
+      line-height: 1.75;
+      display: none;
+    }
+    .summary-box.visible { display: block; }
+    .summary-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--accent-light);
+      margin-bottom: 8px;
+    }
+
+    /* === HISTORY === */
+    .history-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 680px;
+      margin-top: 20px;
+      overflow: hidden;
+    }
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .history-header h2 {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text2);
+    }
+    .history-toggle { font-size: 12px; color: var(--text3); }
+    .history-list { display: none; }
+    .history-list.open { display: block; }
+    .history-item {
+      padding: 14px 24px;
+      border-top: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .history-item:hover { background: var(--surface2); }
+    .history-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--text3);
+      margin-bottom: 4px;
+    }
+    .history-preview {
+      font-size: 14px;
+      color: var(--text2);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .history-empty {
+      padding: 20px 24px;
+      font-size: 14px;
+      color: var(--text3);
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+
     /* === FOOTER === */
     .note {
       margin-top: 20px;
@@ -366,6 +444,7 @@
 
   <div class="actions">
     <button class="btn-sm" id="btn-whisper" disabled style="background:var(--accent);color:#fff;border-color:var(--accent)">🤖 Whisper AI</button>
+    <button class="btn-sm" id="btn-summarize" disabled style="background:#7c3aed;color:#fff;border-color:#7c3aed">✨ Tóm tắt</button>
     <button class="btn-sm" id="btn-copy" disabled>📋 Copy</button>
     <button class="btn-sm" id="btn-export-txt" disabled>📄 TXT</button>
     <button class="btn-sm" id="btn-export-docx" disabled>📝 DOCX</button>
@@ -373,9 +452,15 @@
     <button class="btn-sm" id="btn-clear" disabled>🗑 Xóa</button>
   </div>
 
+  <div class="summary-box" id="summary-box">
+    <div class="summary-label">✨ Tóm tắt buổi học</div>
+    <div id="summary-text"></div>
+  </div>
+
   <div class="settings-row">
     <label>🌐 Ngôn ngữ transcript</label>
     <select id="lang-select">
+      <option value="auto">🌐 Tự động nhận diện</option>
       <option value="vi-VN">Tiếng Việt</option>
       <option value="en-US">English (US)</option>
       <option value="en-GB">English (UK)</option>
@@ -385,6 +470,13 @@
       <option value="fr-FR">Français</option>
       <option value="de-DE">Deutsch</option>
     </select>
+  </div>
+
+  <div class="settings-row">
+    <label>🔑 Claude API Key</label>
+    <input type="password" id="claude-key" placeholder="sk-ant-..."
+      style="background:var(--surface2);color:var(--text);border:1px solid var(--border);
+             border-radius:8px;padding:6px 10px;font-size:13px;width:220px;outline:none" />
   </div>
 
   <div class="settings-row" id="whisper-row">
@@ -397,6 +489,14 @@
       <span id="server-status" style="font-size:12px;color:var(--text3)">--</span>
     </div>
   </div>
+</div>
+
+<div class="history-card">
+  <div class="history-header" onclick="toggleHistory()">
+    <h2>📂 Lịch sử buổi học</h2>
+    <span class="history-toggle" id="history-toggle">▼ Mở</span>
+  </div>
+  <div class="history-list" id="history-list"></div>
 </div>
 
 <p class="note">
@@ -432,9 +532,11 @@
   const btnWav = document.getElementById('btn-export-wav');
   const btnClear = document.getElementById('btn-clear');
   const btnWhisper = document.getElementById('btn-whisper');
+  const btnSummarize = document.getElementById('btn-summarize');
   const btnCheckServer = document.getElementById('btn-check-server');
   const whisperUrlInput = document.getElementById('whisper-url');
   const serverStatus = document.getElementById('server-status');
+  const claudeKeyInput = document.getElementById('claude-key');
   const statusText = document.getElementById('status-text');
   const timerEl = document.getElementById('timer');
   const dot = document.getElementById('dot');
@@ -708,6 +810,7 @@
     btnPause.innerHTML = '<span class="btn-icon">⏸</span> Tạm dừng';
     langSelect.disabled = false;
     updateExportButtons();
+    if (finalTranscript.trim()) saveToHistory();
   }
 
   function updateExportButtons() {
@@ -716,6 +819,116 @@
     btnTxt.disabled = !hasText;
     btnDocx.disabled = !hasText;
     btnClear.disabled = !hasText;
+    btnSummarize.disabled = !hasText;
+  }
+
+  // ===== SUMMARIZE =====
+  async function summarize() {
+    const apiKey = claudeKeyInput.value.trim();
+    if (!apiKey) { alert('Vui lòng nhập Claude API Key vào ô bên dưới.'); return; }
+    const text = finalTranscript.trim();
+    if (!text) return;
+
+    btnSummarize.textContent = '⏳ Đang tóm tắt...';
+    btnSummarize.disabled = true;
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+          'anthropic-dangerous-direct-browser-calls': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1024,
+          messages: [{
+            role: 'user',
+            content: `Đây là transcript của một buổi học. Hãy tóm tắt các điểm chính, ý tưởng quan trọng và kết luận bằng tiếng Việt, trình bày rõ ràng theo gạch đầu dòng:\n\n${text}`
+          }]
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || 'API lỗi ' + res.status);
+      }
+      const data = await res.json();
+      const summary = data.content[0].text;
+      document.getElementById('summary-text').textContent = summary;
+      document.getElementById('summary-box').classList.add('visible');
+      btnSummarize.textContent = '✅ Đã tóm tắt';
+      setTimeout(() => { btnSummarize.textContent = '✨ Tóm tắt'; btnSummarize.disabled = false; }, 2000);
+      // Lưu summary vào history nếu có
+      saveToHistory(summary);
+    } catch (err) {
+      alert('Lỗi tóm tắt: ' + err.message);
+      btnSummarize.textContent = '✨ Tóm tắt';
+      btnSummarize.disabled = false;
+    }
+  }
+
+  // ===== HISTORY =====
+  function saveToHistory(summary = '') {
+    if (!finalTranscript.trim()) return;
+    const sessions = JSON.parse(localStorage.getItem('sessions') || '[]');
+    const lang = langSelect.value === 'auto' ? 'auto' : langSelect.value;
+    sessions.unshift({
+      id: Date.now(),
+      date: new Date().toLocaleString('vi-VN'),
+      duration: formatTime(seconds),
+      language: lang,
+      transcript: finalTranscript.trim(),
+      summary: summary,
+    });
+    // Giữ tối đa 50 buổi
+    localStorage.setItem('sessions', JSON.stringify(sessions.slice(0, 50)));
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const list = document.getElementById('history-list');
+    const sessions = JSON.parse(localStorage.getItem('sessions') || '[]');
+    if (sessions.length === 0) {
+      list.innerHTML = '<div class="history-empty">Chưa có buổi học nào được lưu.</div>';
+      return;
+    }
+    list.innerHTML = sessions.map((s, i) => `
+      <div class="history-item" onclick="restoreSession(${i})">
+        <div class="history-meta">
+          <span>📅 ${s.date}</span>
+          <span>⏱ ${s.duration}</span>
+          <span>🌐 ${s.language}</span>
+          ${s.summary ? '<span style="color:var(--accent)">✨ có tóm tắt</span>' : ''}
+        </div>
+        <div class="history-preview">${s.transcript.slice(0, 120)}...</div>
+      </div>
+    `).join('');
+  }
+
+  function restoreSession(index) {
+    const sessions = JSON.parse(localStorage.getItem('sessions') || '[]');
+    const s = sessions[index];
+    if (!s) return;
+    finalTranscript = s.transcript + ' ';
+    renderTranscript();
+    if (s.summary) {
+      document.getElementById('summary-text').textContent = s.summary;
+      document.getElementById('summary-box').classList.add('visible');
+    } else {
+      document.getElementById('summary-box').classList.remove('visible');
+    }
+    // Mở history panel
+    const list = document.getElementById('history-list');
+    list.classList.add('open');
+  }
+
+  function toggleHistory() {
+    const list = document.getElementById('history-list');
+    const toggle = document.getElementById('history-toggle');
+    const open = list.classList.toggle('open');
+    toggle.textContent = open ? '▲ Đóng' : '▼ Mở';
   }
 
   // ===== WHISPER =====
@@ -737,7 +950,8 @@
   async function transcribeWithWhisper() {
     if (!audioBlob) return;
     const url = whisperUrlInput.value.trim();
-    const lang = langSelect.value.split('-')[0]; // vi-VN → vi
+    const rawLang = langSelect.value;
+    const lang = rawLang === 'auto' ? 'auto' : rawLang.split('-')[0]; // vi-VN → vi
 
     btnWhisper.textContent = '⏳ Đang xử lý...';
     btnWhisper.disabled = true;
@@ -851,11 +1065,17 @@
   btnWav.addEventListener('click', exportWav);
   btnClear.addEventListener('click', () => { if (confirm('Xóa toàn bộ transcript?')) clearTranscript(); });
   btnWhisper.addEventListener('click', transcribeWithWhisper);
+  btnSummarize.addEventListener('click', summarize);
   btnCheckServer.addEventListener('click', checkServer);
+
+  // Lưu API key vào localStorage
+  claudeKeyInput.value = localStorage.getItem('claude-key') || '';
+  claudeKeyInput.addEventListener('input', () => localStorage.setItem('claude-key', claudeKeyInput.value));
 
   // ===== INIT =====
   resizeCanvas();
   drawIdle();
+  renderHistory();
   window.addEventListener('resize', () => { resizeCanvas(); if (!isRecording) drawIdle(); });
 </script>
 </body>
