@@ -716,7 +716,15 @@
   // ===== RECORDING =====
   async function startRecording() {
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,   // tự động tăng gain khi giọng nhỏ
+          sampleRate: 16000,       // tối ưu cho Whisper
+          channelCount: 1,         // mono - đủ cho speech
+        }
+      });
     } catch (err) {
       alert('Không thể truy cập microphone. Vui lòng cấp quyền và thử lại.');
       return;
