@@ -1011,6 +1011,7 @@
 
       const res = await fetch(url + '/transcribe', {
         method: 'POST', body: form,
+        headers: { 'ngrok-skip-browser-warning': '1' },
         signal: AbortSignal.timeout(60000),
       });
       if (!res.ok) throw new Error('Server lỗi ' + res.status);
@@ -1033,7 +1034,7 @@
     serverStatus.textContent = 'Đang kiểm tra...';
     serverStatus.style.color = 'var(--text2)';
     try {
-      const res = await fetch(url + '/health', { signal: AbortSignal.timeout(4000) });
+      const res = await fetch(url + '/health', { headers: { 'ngrok-skip-browser-warning': '1' }, signal: AbortSignal.timeout(4000) });
       const data = await res.json();
       serverStatus.textContent = '✅ Online (model: ' + data.model + ')';
       serverStatus.style.color = 'var(--success)';
@@ -1060,6 +1061,7 @@
       const res = await fetch(url + '/transcribe', {
         method: 'POST',
         body: form,
+        headers: { 'ngrok-skip-browser-warning': '1' },
         signal: AbortSignal.timeout(300000), // 5 phút timeout
       });
       if (!res.ok) throw new Error('Server lỗi: ' + res.status);
@@ -1173,7 +1175,7 @@
     try {
       const res = await fetch(url + '/save-key', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
         body: JSON.stringify({ key }),
         signal: AbortSignal.timeout(5000),
       });
@@ -1192,7 +1194,7 @@
   async function loadApiKey() {
     const url = whisperUrlInput.value.trim();
     try {
-      const res = await fetch(url + '/get-key', { signal: AbortSignal.timeout(3000) });
+      const res = await fetch(url + '/get-key', { headers: { 'ngrok-skip-browser-warning': '1' }, signal: AbortSignal.timeout(3000) });
       const data = await res.json();
       if (data.key) {
         claudeKeyInput.value = data.key;
