@@ -562,6 +562,7 @@
       audioBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
       btnWav.disabled = false;
       btnWhisper.disabled = false;
+      autoSaveAudio();
     };
 
     mediaRecorder.start(1000);
@@ -842,6 +843,29 @@
   }
 
   function exportWav() { if (audioBlob) download(audioBlob, `recording_${timestamp()}.wav`); }
+
+  async function autoSaveAudio() {
+    if (!audioBlob) return;
+    const filename = `recording_${timestamp()}.webm`;
+    const url = whisperUrlInput.value.trim();
+    try {
+      const form = new FormData();
+      form.append('audio', audioBlob, filename);
+      form.append('filename', filename);
+      const res = await fetch(url + '/save-audio', {
+        method: 'POST', body: form,
+        headers: { 'ngrok-skip-browser-warning': '1' },
+        signal: AbortSignal.timeout(60000),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setStatus('done', `Đã lưu vào PC (${data.size_mb}MB) — ${formatTime(seconds)}`);
+    } catch {
+      // Server offline → fallback download
+      download(audioBlob, filename);
+      setStatus('done', `Đã tải về Downloads — ${formatTime(seconds)}`);
+    }
+  }
 
   function copyText() {
     navigator.clipboard.writeText(finalTranscript.trim()).then(() => {
