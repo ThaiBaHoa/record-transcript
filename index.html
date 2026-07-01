@@ -573,6 +573,7 @@
     if (recognition) { recognition.start(); recognitionActive = true; }
 
     startTimer();
+    startAutoSave();
     resizeCanvas();
     drawVisualizer();
     liveBadge.classList.add('visible');
@@ -621,6 +622,11 @@
     stopTimer();
     liveBadge.classList.remove('visible');
     stopLiveWhisper();
+    stopAutoSave();
+    if (finalTranscript.trim()) {
+      localStorage.setItem('draft_transcript', finalTranscript);
+      localStorage.setItem('draft_time', new Date().toISOString());
+    }
     drawIdle();
     setStatus('done', `Hoàn thành — ${formatTime(seconds)}`);
     btnRecord.disabled = false;
@@ -785,6 +791,7 @@
     const sessions = JSON.parse(localStorage.getItem('sessions') || '[]');
     sessions.unshift({ id: Date.now(), date: new Date().toLocaleString('vi-VN'), duration: formatTime(seconds), language: langSelect.value, transcript: finalTranscript.trim(), summary });
     localStorage.setItem('sessions', JSON.stringify(sessions.slice(0, 50)));
+    clearDraft();
     renderHistory();
   }
 
@@ -900,11 +907,48 @@
   btnCheckServer.addEventListener('click', checkServer);
   btnSaveKey.addEventListener('click', saveApiKey);
 
+  // ===== AUTO-SAVE DRAFT =====
+  let autoSaveInterval = null;
+
+  function startAutoSave() {
+    autoSaveInterval = setInterval(() => {
+      if (finalTranscript.trim()) {
+        localStorage.setItem('draft_transcript', finalTranscript);
+        localStorage.setItem('draft_time', new Date().toISOString());
+      }
+    }, 30000);
+  }
+
+  function stopAutoSave() {
+    clearInterval(autoSaveInterval);
+    autoSaveInterval = null;
+  }
+
+  function clearDraft() {
+    localStorage.removeItem('draft_transcript');
+    localStorage.removeItem('draft_time');
+  }
+
+  function checkDraft() {
+    const draft = localStorage.getItem('draft_transcript');
+    const draftTime = localStorage.getItem('draft_time');
+    if (!draft || !draft.trim()) return;
+    const time = draftTime ? new Date(draftTime).toLocaleString('vi-VN') : 'không rõ';
+    if (confirm(`Tìm thấy transcript chưa lưu từ lúc ${time}.\n\nKhôi phục lại không?`)) {
+      finalTranscript = draft;
+      renderTranscript();
+      updateExportButtons();
+    } else {
+      clearDraft();
+    }
+  }
+
   // ===== INIT =====
   loadApiKey();
   resizeCanvas();
   drawIdle();
   renderHistory();
+  checkDraft();
   window.addEventListener('resize', () => { resizeCanvas(); if (!isRecording) drawIdle(); });
 </script>
 </body>
