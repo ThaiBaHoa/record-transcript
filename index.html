@@ -531,7 +531,7 @@
   let liveInterval = null;
   let isLiveWhisper = false;
   let isProcessingChunk = false;
-  const LIVE_INTERVAL_MS = 30000; // gửi mỗi 30 giây
+  const LIVE_INTERVAL_MS = 15000; // gửi mỗi 15 giây
 
   // ===== ELEMENTS =====
   const btnRecord = document.getElementById('btn-record');
@@ -961,20 +961,29 @@
   }
 
   // ===== LIVE WHISPER =====
-  function toggleLiveWhisper() {
+  async function toggleLiveWhisper() {
     if (!isRecording) return;
-    isLiveWhisper = !isLiveWhisper;
-    if (isLiveWhisper) {
-      liveChunks = [];
-      btnLiveWhisper.textContent = '🔴 Live: BẬT';
-      btnLiveWhisper.style.background = 'var(--danger)';
-      btnLiveWhisper.style.color = '#fff';
-      btnLiveWhisper.style.borderColor = 'var(--danger)';
-      setSpeechStatus('⚡ Live Whisper đang chạy...', 'var(--danger)');
-      liveInterval = setInterval(sendLiveChunk, LIVE_INTERVAL_MS);
-    } else {
-      stopLiveWhisper();
+    if (isLiveWhisper) { stopLiveWhisper(); return; }
+
+    // Kiểm tra server trước khi bật
+    const url = whisperUrlInput.value.trim();
+    setSpeechStatus('Đang kiểm tra server...', 'var(--text2)');
+    try {
+      const res = await fetch(url + '/health', { headers: { 'ngrok-skip-browser-warning': '1' }, signal: AbortSignal.timeout(4000) });
+      if (!res.ok) throw new Error();
+    } catch {
+      setSpeechStatus('❌ Whisper server chưa kết nối — không thể bật Live', 'var(--danger)');
+      return;
     }
+
+    isLiveWhisper = true;
+    liveChunks = [];
+    btnLiveWhisper.textContent = '🔴 Live: BẬT';
+    btnLiveWhisper.style.background = 'var(--danger)';
+    btnLiveWhisper.style.color = '#fff';
+    btnLiveWhisper.style.borderColor = 'var(--danger)';
+    setSpeechStatus('⚡ Live Whisper đang chạy — kết quả sau 15 giây...', 'var(--danger)');
+    liveInterval = setInterval(sendLiveChunk, LIVE_INTERVAL_MS);
   }
 
   function stopLiveWhisper() {
