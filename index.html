@@ -310,6 +310,14 @@
       </div>
     </div>
     <div class="settings-row">
+      <label>🤖 OpenAI API Key <span style="font-size:11px;color:var(--text3)">(Live Dịch)</span></label>
+      <div class="settings-ctrl">
+        <input type="password" id="openai-key" class="input" placeholder="sk-…">
+        <button class="chip" id="btn-save-openai-key">Lưu</button>
+        <span id="openai-key-status" class="settings-note"></span>
+      </div>
+    </div>
+    <div class="settings-row">
       <label>🤖 Whisper Server</label>
       <div class="settings-ctrl">
         <input type="text" id="whisper-url" class="input" value="http://localhost:5000">
@@ -706,19 +714,38 @@
 
   async function translateChunk(newText) {
     if (!isLiveTranslate || !newText.trim()) return;
-    const lang = translateLang.value;
+    const lang = translateLang.options[translateLang.selectedIndex].text.replace('→ ', '');
+    const openaiKey = document.getElementById('openai-key').value.trim();
     try {
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${lang}&dt=t&q=${encodeURIComponent(newText)}`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-      const data = await res.json();
-      const translated = data[0].map(s => s[0]).join('');
+      let translated = '';
+      if (openaiKey) {
+        // GPT-4o mini
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: `Translate the following text to ${lang}. Return only the translation, no explanation:\n\n${newText}` }],
+            max_tokens: 1000,
+          }),
+          signal: AbortSignal.timeout(15000),
+        });
+        const data = await res.json();
+        translated = data.choices?.[0]?.message?.content?.trim() || '';
+      } else {
+        // Fallback: Google Translate
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${translateLang.value}&dt=t&q=${encodeURIComponent(newText)}`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+        const data = await res.json();
+        translated = data[0].map(s => s[0]).join('');
+      }
       if (translated) {
-        translatedText += translated + ' ';
+        translatedText += translated + '\n';
         translateTextEl.textContent = translatedText;
         translateBox.classList.add('visible');
       }
     } catch {
-      // Silently fail - don't interrupt main flow
+      // Silently fail
     }
   }
 
@@ -1003,6 +1030,20 @@
   btnSummarize.addEventListener('click', summarize);
   btnCheckServer.addEventListener('click', checkServer);
   btnSaveKey.addEventListener('click', saveApiKey);
+
+  // ===== OPENAI KEY =====
+  const openaiKeyInput = document.getElementById('openai-key');
+  const openaiKeyStatus = document.getElementById('openai-key-status');
+  document.getElementById('btn-save-openai-key').addEventListener('click', () => {
+    const key = openaiKeyInput.value.trim();
+    if (!key) { openaiKeyStatus.textContent = '⚠️ Nhập key trước'; return; }
+    localStorage.setItem('openai-key', key);
+    openaiKeyStatus.textContent = '✅ Đã lưu';
+    openaiKeyStatus.style.color = 'var(--success)';
+  });
+  // Load on startup
+  openaiKeyInput.value = localStorage.getItem('openai-key') || '';
+  if (openaiKeyInput.value) { openaiKeyStatus.textContent = '✅ Đã có key'; openaiKeyStatus.style.color = 'var(--success)'; }
 
   // ===== AUTO-SAVE DRAFT =====
   let autoSaveInterval = null;
